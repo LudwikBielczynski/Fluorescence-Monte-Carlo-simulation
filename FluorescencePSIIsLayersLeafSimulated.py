@@ -9,8 +9,6 @@ def chunks(l, numberOfGroups):
     for i in xrange(0, len(l), chunkLength):
         yield l[i:i + chunkLength]
 
-
-
 class PSII(object):
     """
     Representation of a PSII particle
@@ -48,11 +46,22 @@ class PSII(object):
 
 
     def updatePhotonFlux(self, PhotonFlux):
+        """
+        Updates the photonFlux and dependent variables: absCrossection, probabilityAbsorbed
+        """    
         self.photonFlux = PhotonFlux
-        self.sbsCrossection = self.size/float(self.leafArea)
+        self.absCrossection = self.size/float(self.leafArea)
         self.probabilityAbsorbed = self.photonFlux * self.absCrossection
 
     def doesFluoresce(self):
+        """
+        Checks if the photon will be fluoresced from a PSII.
+        The excited Reaction Center of a PSII can decay in two manners fluorescence or non-radiative decay (ISC).
+            If an RC fluoresced it decays to a ground state.
+            Otherwise it decays non-radiatevely
+
+        returns boolean: True if photon is fluoresced False otherwise
+        """          
         if self.state == "closed excited":
             if random.random() <= self.probabilityDecay:
                 self.state = "closed ground"
@@ -154,9 +163,9 @@ class Leaf(object):
         self.totalAbsorbed = 0
 
     def assignPSIIToLayers(self):
-        '''
+        """
         Change the PSII layer number
-        '''
+        """
         layerPSIIs = chunks(self.PSIIs, self.layersNumber)
         try:
             layer = 0
@@ -168,9 +177,9 @@ class Leaf(object):
             pass
 
     def getPSIIsInLayer(self, layer):
-        '''
+        """
         Returns a list of PSIIs from a specific layer
-        '''
+        """
         layersPSIIs = list(chunks(self.PSIIs, self.layersNumber))
         return layersPSIIs[layer]
 
