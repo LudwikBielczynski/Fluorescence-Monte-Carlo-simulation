@@ -17,16 +17,21 @@ class PSII(object):
     def __init__(self, layer = 1, size = 1, state = "ground", photonFlux = 1000, leafArea = 1000, probabilityExcited = 0.1, probabilityFluorescence = 0.05, probabilityRadiationless = 0.1, probablilityAnihilation = 0.01):
         """
 
-        Initialize a PSII instance, saves all parameters as attributes
-        of the instance.
-
-        size: int representing size of the PSII
-
-        state: str representing the state of PSII accepted values "ground", "closed ground" or "closed excited"
+        Initialize a PSII instance, saves all parameters as attributes of the instance.
         
-        absCrossection: float calculated from the the PSII size normalized to the leafArea
+        Input values:
+            layer: int representing the number of layers between which the PSIIs are distributed
+            size: int representing size of the PSII
+            state: str representing the state of PSII accepted values "ground", "closed ground" or "closed excited"
+            photonFlux: int representing the number of photons that are appearing in one light: "on" event
+            probabilityExcited: float in the range 0-1 representing the probability of an absorbed photon to promote the PSII reaction center
+            probabilityFluorescence: float in the range 0-1 representing the probability of a closed excited RC to fluoresce a photon
+            probabilityRadiationless: float in the range 0-1 representing the probability of a closed excited RC to decay non-radiatively through an InterSystem Crossing
+            probablilityAnihilation: float in the range 0-1 representing the probability of a closed excited RC to decay to the closed ground state during a double excitation event
 
-        probabilityAbsorbed: float 
+        Values calculated:
+            absCrossection: float calculated from the the PSII size normalized to the leafArea
+            probabilityAbsorbed: float from 0-1 representing the probability of a RC to absorb a photon. If above 1 represents multiple photon excitation. 
 
         """
         self.layer = layer
@@ -48,6 +53,8 @@ class PSII(object):
     def updatePhotonFlux(self, PhotonFlux):
         """
         Updates the photonFlux and dependent variables: absCrossection, probabilityAbsorbed
+
+        input: int
         """    
         self.photonFlux = PhotonFlux
         self.absCrossection = self.size/float(self.leafArea)
@@ -75,6 +82,18 @@ class PSII(object):
             return False
 
     def update(self, light):
+        """
+        Function describing the space of possible transition without or under illumination. The PSII is assumed to be simplified and DCMU treated.
+        When the light is off only the closed, excited RCs can fluoresce or decay non-radiatively.
+        When the light is on following scheme is assumed:
+
+        ground -> closed ground <-> closed excited
+
+        Input:
+            light: str "on" or "off" representing if the photon flux will be hitting the RCs during a timestep
+
+        returns a pair of booleans: True/False if a photon is absorbed and True/False if a photon is fluoresced 
+        """            
         if light == "off":
             if self.state == "closed excited":
                 return self.doesFluoresce()
@@ -108,8 +127,15 @@ class Layer(object):
     """    
     def __init__(self, PSIIs, layersNumber):
         """
-        Initialization function, saves the PSIIs 
 
+        Initialization function, saves the PSIIs.
+
+        Input:
+            PSIIs: list of PSII objects (representing a fraction of total PSIIs assigned to this layer)
+            layersNumber: int representing the number of layers into which the RCs will be destributed
+
+        Fcount: int representing the number of photons fluoresced from a layer
+        AbsorbedCount: int representing the number of photons absorbed by the layer        
         """
         self.PSIIs = PSIIs
         self.layersNumber = layersNumber
@@ -117,12 +143,20 @@ class Layer(object):
         self.AbsorbedCount = 0
 
     def updateAbsorbedFluorescedCount(self, Absorbed, Fluoresced):
+        """
+        Changes the count of the absorbed and fluoresced photons by a specific layer      
+        """
         if Absorbed == True:
             self.AbsorbedCount += 1
         if Fluoresced == True:
             self.FCount += 1
 
     def updatePSIIs(self, light, PhotonFlux, PSIIs = None):
+        """
+        Updates the PSIIs and adjusts the PhotonFlux parameters
+
+        returns: a pair of int representing the number of Fluoresced and Absorbed photons by the layer 
+        """       
         if PSIIs == None:
             PSIIs = self.PSIIs
         self.FCount = 0
@@ -151,8 +185,16 @@ class Leaf(object):
     """    
     def __init__(self, PSIIs, layersNumber):
         """
-        Initialization function, saves the PSIIs 
+        
+        Initialization function, saves the PSIIs
 
+        Input:
+            PSIIs: list representing all PSIIs objects in the leaf
+            LayersNumber: int representing the number of layers
+
+        Layers: list representing the Layers of PSIIs present in the leaf
+        totalFluoresced: int representing the number of photons Fluoresced by the whole leaf
+        totalAbsorbed: int representing the number of photons Absorbed by the whole leaf
         """
         self.PSIIs = PSIIs
         self.layersNumber = layersNumber
@@ -184,11 +226,19 @@ class Leaf(object):
         return layersPSIIs[layer]
 
     def createLayers(self):
+        """
+        Creates the layer objects and assigns PSIIs to selected ones.
+        """        
         for layer in range(0, self.layersNumber):
             PSIIs = self.getPSIIsInLayer(layer)
             self.Layers.append(Layer(PSIIs, layer))
 
     def updateLayers(self, light):
+        """
+        Calculates how much light is fluoresced and absorbed by passing through all the layers.
+
+        returns: a pair of int representing the total amount of Fluoresced and Absorbed lught by the leaf
+        """            
         self.totalFluoresced = 0
         self.totalAbsorbed = 0
         PSIIs = self.PSIIs 
@@ -200,15 +250,11 @@ class Leaf(object):
             PhotonFlux = PhotonFlux - Absorbed + Fluoresced
         return self.totalFluoresced, self.totalAbsorbed
 
-    def howMuchAbsorbedByLayer(self, layer):
-        print 'not implemented yet'
-
 selectedTimepoint = []
 
 def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, photonFlux = 1000, layers = 1):
     """
     Runs simulations and plots graphs for PSIIs in the leaf.
-
     """
     global selectedTimepoint
     timepoint = 10
