@@ -324,6 +324,7 @@ size = 1
 layer = 1
 photonFluxList = range(200,1001,200)
 
+projectPath = '/home/ludwik/Documents/python/Monte-Carlo/Layers and size/'
 def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
     for light in photonFluxList:
         print 'Light: %i' % light
@@ -331,7 +332,6 @@ def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
     plt.legend(loc = "best", fontsize = 'small')
     plt.xlabel("Time [a.u.]")
     plt.ylabel("Ft [counts]")
-    projectPath = '/home/ludwik/Documents/python/Monte-Carlo/Layers and size/'
     fileName = str('numPSIIs%i timeSteps%i trialsNum%i size%.2f layers%i lightDependency.svg' % (numPSIIs, timeSteps, trialsNum, size, layer))
     plt.savefig(projectPath + fileName, width = 30, height = 8)
     plt.close()
