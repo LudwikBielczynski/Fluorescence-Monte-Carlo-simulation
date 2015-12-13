@@ -1,5 +1,6 @@
 import random
 import matplotlib.pyplot as plt
+import numpy as np
 
 def chunks(l, numberOfGroups):
     """
@@ -9,12 +10,12 @@ def chunks(l, numberOfGroups):
     for i in xrange(0, len(l), chunkLength):
         yield l[i:i + chunkLength]
 
-class PSII(object):
+class PSII_DCMU(object):
     """
-    Representation of a PSII particle
+    Representation of a PSII particle with a blocked QA cite
     """   
 
-    def __init__(self, layer = 1, size = 1, state = "ground", photonFlux = 1000, leafArea = 1000, probabilityExcited = 0.1, probabilityFluorescence = 0.05, probabilityRadiationless = 0.1, probablilityAnihilation = 0.01):
+    def __init__(self, layer = 1, size = 1, state = "ground", photonFlux = 1000, leafArea = 1000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01):
         """
 
         Initialize a PSII instance, saves all parameters as attributes of the instance.
@@ -24,41 +25,34 @@ class PSII(object):
             size: int representing size of the PSII
             state: str representing the state of PSII accepted values "ground", "closed ground" or "closed excited"
             photonFlux: int representing the number of photons that are appearing in one light: "on" event
-            probabilityExcited: float in the range 0-1 representing the probability of an absorbed photon to promote the PSII reaction center
             probabilityFluorescence: float in the range 0-1 representing the probability of a closed excited RC to fluoresce a photon
-            probabilityRadiationless: float in the range 0-1 representing the probability of a closed excited RC to decay non-radiatively through an InterSystem Crossing
             probablilityAnihilation: float in the range 0-1 representing the probability of a closed excited RC to decay to the closed ground state during a double excitation event
 
         Values calculated:
-            absCrossection: float calculated from the the PSII size normalized to the leafArea
             probabilityAbsorbed: float from 0-1 representing the probability of a RC to absorb a photon. If above 1 represents multiple photon excitation. 
-
+            probabilityDecay
         """
         self.layer = layer
         self.photonFlux = photonFlux
         self.leafArea = leafArea
         self.size = size
         self.state = state
-        self.absCrossection = self.size/float(self.leafArea)
-        self.probabilityAbsorbed = self.photonFlux * self.absCrossection
+        self.probabilityAbsorbed = self.photonFlux/float(self.leafArea) * self.size
 
-        self.probabilityExcited = probabilityExcited
-        self.probabilityFluorescence = probabilityFluorescence
-        self.probabilityRadiationless = probabilityRadiationless       
-        self.probabilityDecay = probabilityFluorescence + probabilityRadiationless
+        self.probabilityFluorescence = probabilityFluorescence 
+        self.probabilityDecay = 1 - np.exp(-1/3.5)                            #probability of decay based on the fluorescence lifetime and selected timestep
+
 
         self.probablilityAnihilation = probablilityAnihilation
 
-
     def updatePhotonFlux(self, PhotonFlux):
         """
-        Updates the photonFlux and dependent variables: absCrossection, probabilityAbsorbed
+        Updates the photonFlux and dependent variables: probabilityAbsorbed
 
         input: int
         """    
         self.photonFlux = PhotonFlux
-        self.absCrossection = self.size/float(self.leafArea)
-        self.probabilityAbsorbed = self.photonFlux * self.absCrossection
+        self.probabilityAbsorbed = self.photonFlux /float(self.leafArea) * self.size
 
     def doesFluoresce(self):
         """
@@ -99,9 +93,71 @@ class PSII(object):
                 return self.doesFluoresce()
 
         if light == "on":         
-            Absorbed = False
-            if self.state == "closed excited":                 #Radiationless decay if the light is not absorbed   
-                return Absorbed, self.doesFluoresce()
+            if random.random() <= self.probabilityAbsorbed:
+                Absorbed = True
+                if self.state == "ground":
+                    self.state = "closed ground"
+                    return Absorbed, False
+                if self.state == "closed ground":
+                    self.state = "closed excited"
+                    return Absorbed, self.doesFluoresce()
+                if self.state == "closed excited":
+                    if random.random() <= self.probablilityAnihilation: #Check what is really happening during double excitation
+                        return Absorbed, False
+                    else:
+                        return Absorbed, self.doesFluoresce()
+            else:
+                Absorbed = False
+                if self.state == "closed excited":                 #Radiationless decay if the light is not absorbed   
+                    return Absorbed, self.doesFluoresce()
+                else:
+                    return Absorbed, False  
+
+class PSII_QA(PSII_DCMU):
+    """
+    Representation of a PSII particle that can transfer the electron from the QA to QB site without a limitation on the PlastoQuinone pool
+    """ 
+    def __init__(self, layer = 1, size = 1, state = "ground", photonFlux = 1000, leafArea = 1000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01):
+        """
+
+        Initialize a PSII instance, saves all parameters as attributes of the instance.
+        
+        Input values:
+            layer: int representing the number of layers between which the PSIIs are distributed
+            size: int representing size of the PSII
+            state: str representing the state of PSII accepted values "ground", "closed ground" or "closed excited"
+            photonFlux: int representing the number of photons that are appearing in one light: "on" event
+            probabilityFluorescence: float in the range 0-1 representing the probability of a closed excited RC to fluoresce a photon
+            probablilityAnihilation: float in the range 0-1 representing the probability of a closed excited RC to decay to the closed ground state during a double excitation event
+
+        Values calculated:
+            probabilityAbsorbed: float from 0-1 representing the probability of a RC to absorb a photon. If above 1 represents multiple photon excitation. 
+            probabilityDecay
+        """
+        PSII_DCMU.__init__(self, layer, size, state, photonFlux, leafArea, probabilityFluorescence, probablilityAnihilation)
+
+        self.probabilityQAtoQB = 1 - np.exp(-1/3000)
+
+    def update(self, light):
+        """
+        Function describing the space of possible transition without or under illumination. The PSII is assumed to be simplified and DCMU treated.
+        When the light is off only the closed, excited RCs can fluoresce or decay non-radiatively.
+        When the light is on following scheme is assumed:
+
+        ground -> closed ground <-> closed excited
+
+        Input:
+            light: str "on" or "off" representing if the photon flux will be hitting the RCs during a timestep
+
+        returns a pair of booleans: True/False if a photon is absorbed and True/False if a photon is fluoresced 
+        """            
+        if light == "off":
+            if self.state == "closed excited":
+                return self.doesFluoresce()
+
+        if light == "on":  
+            if random.random() <= self.probabilityQAtoQB and self.state == "closed ground":
+                self.state = "ground"            
 
             if random.random() <= self.probabilityAbsorbed:
                 Absorbed = True
@@ -109,17 +165,20 @@ class PSII(object):
                     self.state = "closed ground"
                     return Absorbed, False
                 if self.state == "closed ground":
-                    if random.random() <= self.probabilityExcited:
-                        self.state = "closed excited"
-                        return Absorbed, self.doesFluoresce()
+                    self.state = "closed excited"
+                    return Absorbed, self.doesFluoresce()
                 if self.state == "closed excited":
-                    if random.random() <= self.probablilityAnihilation:
-                        self.state = "closed ground"
+                    #return Absorbed, self.doesFluoresce()
+                    if random.random() <= self.probablilityAnihilation: #Check what is really happening during double excitation
                         return Absorbed, False
-                else:
-                    return Absorbed, False
+                    else:
+                        return Absorbed, self.doesFluoresce()
             else:
-                return False, False  
+                Absorbed = False
+                if self.state == "closed excited":                 #Radiationless decay if the light is not absorbed   
+                    return Absorbed, self.doesFluoresce()
+                else:
+                    return Absorbed, False  
 
 class Layer(object):
     """
@@ -164,7 +223,7 @@ class Layer(object):
         for psii in PSIIs:
             psii.updatePhotonFlux(PhotonFlux)
             if light == "on":
-                if psii.probabilityAbsorbed < 1:
+                if psii.probabilityAbsorbed < 1:                            #case of single and multiple excitations
                     Absorbed, Fluoresced = psii.update(light)
                     self.updateAbsorbedFluorescedCount(Absorbed, Fluoresced)
 
@@ -265,7 +324,8 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     for trial in range(0, trialsNum):
         PSIIs = []                                      #Creating PSIIs
         for nr in range(0, numPSIIs):
-            PSIIs.append(PSII(size = size, state = "ground", photonFlux = photonFlux, leafArea = 10000, probabilityExcited = 0.8, probabilityFluorescence = 0.05, probabilityRadiationless = 0.15, probablilityAnihilation = 0.01))
+            #PSIIs.append(PSII_DCMU(size = size, state = "ground", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
+            PSIIs.append(PSII_QA(size = size, state = "ground", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
         simulatedLeaf = Leaf(PSIIs, layers)             #Creating the leaf
         simulatedLeaf.assignPSIIToLayers()              #Creating layers in the leaf
         simulatedLeaf.createLayers()
@@ -318,7 +378,7 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 #plt.show()
 
 numPSIIs = 10000
-timeSteps = 10
+timeSteps = 1000
 trialsNum = 1
 size = 1
 layer = 1
@@ -330,10 +390,13 @@ def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
         print 'Light: %i' % light
         simulatingLeaf(numPSIIs = numPSIIs, timeSteps = timeSteps, trialsNum = trialsNum, size = size, photonFlux = light, layers = layer)
     plt.legend(loc = "best", fontsize = 'small')
-    plt.xlabel("Time [a.u.]")
+    plt.xlabel("Time [ms]")
+    plt.xscale('log')
+    plt.xlim(xmin = 1, xmax = timeSteps)
     plt.ylabel("Ft [counts]")
     fileName = str('numPSIIs%i timeSteps%i trialsNum%i size%.2f layers%i lightDependency.svg' % (numPSIIs, timeSteps, trialsNum, size, layer))
-    plt.savefig(projectPath + fileName, width = 30, height = 8)
+    plt.savefig(projectPath + "QA" + fileName, width = 30, height = 8)
+    #plt.savefig(projectPath + fileName, width = 30, height = 8)    
     plt.close()
 
 Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer)
@@ -432,5 +495,5 @@ plt.close()
 #numPSIIs = 10
 #PSIIs = []
 #for nr in range(0, numPSIIs):
-#    PSIIs.append(PSII(size = size, state = "ground", photonFlux = photonFlux, leafArea = 1000, probabilityExcited = 0.1, probabilityFluorescence = 0.2, probabilityRadiationless = 0.05, probablilityAnihilation = 0.01))
+#    PSIIs.append(PSII(size = size, state = "ground", photonFlux = photonFlux, leafArea = 1000, probabilityFluorescence = 0.2, probablilityAnihilation = 0.01))
 #    
