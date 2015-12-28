@@ -15,7 +15,7 @@ class PSII_DCMU(object):
     Representation of a PSII particle with a blocked QA cite
     """   
 
-    def __init__(self, layer = 1, size = 1, state = "ground", photonFlux = 1000, leafArea = 1000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01):
+    def __init__(self, layer = 1, size = 1, state = "open", photonFlux = 1000, leafArea = 1000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01):
         """
 
         Initialize a PSII instance, saves all parameters as attributes of the instance.
@@ -23,7 +23,7 @@ class PSII_DCMU(object):
         Input values:
             layer: int representing the number of layers between which the PSIIs are distributed
             size: int representing size of the PSII
-            state: str representing the state of PSII accepted values "ground", "closed ground" or "closed excited"
+            state: str representing the state of PSII accepted values "open", "closed ground" or "closed excited"
             photonFlux: int representing the number of photons that are appearing in one light: "on" event
             probabilityFluorescence: float in the range 0-1 representing the probability of a closed excited RC to fluoresce a photon
             probablilityAnihilation: float in the range 0-1 representing the probability of a closed excited RC to decay to the closed ground state during a double excitation event
@@ -81,7 +81,7 @@ class PSII_DCMU(object):
         When the light is off only the closed, excited RCs can fluoresce or decay non-radiatively.
         When the light is on following scheme is assumed:
 
-        ground -> closed ground <-> closed excited
+        open -> closed ground <-> closed excited
 
         Input:
             light: str "on" or "off" representing if the photon flux will be hitting the RCs during a timestep
@@ -95,7 +95,7 @@ class PSII_DCMU(object):
         if light == "on":         
             if random.random() <= self.probabilityAbsorbed:
                 Absorbed = True
-                if self.state == "ground":
+                if self.state == "open":
                     self.state = "closed ground"
                     return Absorbed, False
                 if self.state == "closed ground":
@@ -113,11 +113,11 @@ class PSII_DCMU(object):
                 else:
                     return Absorbed, False  
 
-class PSII_QA(PSII_DCMU):
+class PSII_QB(PSII_DCMU):
     """
     Representation of a PSII particle that can transfer the electron from the QA to QB site without a limitation on the PlastoQuinone pool
     """ 
-    def __init__(self, layer = 1, size = 1, state = "ground", photonFlux = 1000, leafArea = 1000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01):
+    def __init__(self, layer = 1, size = 1, state = "open", photonFlux = 1000, leafArea = 1000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01):
         """
 
         Initialize a PSII instance, saves all parameters as attributes of the instance.
@@ -125,7 +125,7 @@ class PSII_QA(PSII_DCMU):
         Input values:
             layer: int representing the number of layers between which the PSIIs are distributed
             size: int representing size of the PSII
-            state: str representing the state of PSII accepted values "ground", "closed ground" or "closed excited"
+            state: str representing the state of PSII accepted values "open", "closed ground" or "closed excited"
             photonFlux: int representing the number of photons that are appearing in one light: "on" event
             probabilityFluorescence: float in the range 0-1 representing the probability of a closed excited RC to fluoresce a photon
             probablilityAnihilation: float in the range 0-1 representing the probability of a closed excited RC to decay to the closed ground state during a double excitation event
@@ -135,16 +135,19 @@ class PSII_QA(PSII_DCMU):
             probabilityDecay
         """
         PSII_DCMU.__init__(self, layer, size, state, photonFlux, leafArea, probabilityFluorescence, probablilityAnihilation)
+        self.stateQBReduction = 0
+        self.probabilityPQdiffusion = 0.3
 
-        self.probabilityQAtoQB = 1 - np.exp(-1/3000)
+        self.probabilityQAtoQB = 0.05
 
     def update(self, light):
         """
-        Function describing the space of possible transition without or under illumination. The PSII is assumed to be simplified and DCMU treated.
+        Function describing the space of possible transition without or under illumination. The PSII is assumed have a QB site that is able to accept an electron.
+        The reopening of RCs is added.
         When the light is off only the closed, excited RCs can fluoresce or decay non-radiatively.
         When the light is on following scheme is assumed:
 
-        ground -> closed ground <-> closed excited
+        open <-> closed ground <-> closed excited
 
         Input:
             light: str "on" or "off" representing if the photon flux will be hitting the RCs during a timestep
@@ -155,35 +158,43 @@ class PSII_QA(PSII_DCMU):
             if self.state == "closed excited":
                 return self.doesFluoresce()
 
-        if light == "on":  
-            if random.random() <= self.probabilityQAtoQB and self.state == "closed ground":
-                self.state = "ground"            
+        if light == "on": 
+            PQdiffuse = False
+            if self.stateQBReduction == 2 and random.random() <= self.probabilityPQdiffusion:
+                self.stateQBReduction = 0
+                PQdiffuse = True
+
+            if self.state == "closed ground" and self.stateQBReduction != 2 and random.random() <= self.probabilityQAtoQB: #Added reopening of RCs
+                self.state = "open"  
+                self.stateQBReduction += 1
 
             if random.random() <= self.probabilityAbsorbed:
                 Absorbed = True
-                if self.state == "ground":
+                if self.state == "open":
                     self.state = "closed ground"
-                    return Absorbed, False
+                    return Absorbed, False, PQdiffuse
                 if self.state == "closed ground":
                     self.state = "closed excited"
-                    return Absorbed, self.doesFluoresce()
+                    return Absorbed, self.doesFluoresce(), PQdiffuse
                 if self.state == "closed excited":
-                    #return Absorbed, self.doesFluoresce()
                     if random.random() <= self.probablilityAnihilation: #Check what is really happening during double excitation
-                        return Absorbed, False
+                        return Absorbed, False, PQdiffuse
                     else:
-                        return Absorbed, self.doesFluoresce()
+                        return Absorbed, self.doesFluoresce(), PQdiffuse
             else:
                 Absorbed = False
                 if self.state == "closed excited":                 #Radiationless decay if the light is not absorbed   
-                    return Absorbed, self.doesFluoresce()
+                    return Absorbed, self.doesFluoresce(), PQdiffuse
                 else:
-                    return Absorbed, False  
+                    return Absorbed, False, PQdiffuse
+
+    def updatePQ(self, actualPQPool, maxPQPool):
+        self.probabilityPQdiffusion = float(actualPQPool)/maxPQPool 
 
 class Layer(object):
     """
     Representation of layers in the leaf.
-    """    
+    """
     def __init__(self, PSIIs, layersNumber):
         """
 
@@ -196,12 +207,15 @@ class Layer(object):
         Fcount: int representing the number of photons fluoresced from a layer
         AbsorbedCount: int representing the number of photons absorbed by the layer        
         """
+        PQs = 1000
+        self.maxPQPool = PQs
+        self.actualPQPool = PQs
         self.PSIIs = PSIIs
         self.layersNumber = layersNumber
         self.FCount = 0
         self.AbsorbedCount = 0
 
-    def updateAbsorbedFluorescedCount(self, Absorbed, Fluoresced):
+    def updateCounters(self, Absorbed, Fluoresced, PQ):
         """
         Changes the count of the absorbed and fluoresced photons by a specific layer      
         """
@@ -209,6 +223,9 @@ class Layer(object):
             self.AbsorbedCount += 1
         if Fluoresced == True:
             self.FCount += 1
+        if PQ == True:
+            if self.actualPQPool > 0:
+                self.actualPQPool -= 1
 
     def updatePSIIs(self, light, PhotonFlux, PSIIs = None):
         """
@@ -223,14 +240,15 @@ class Layer(object):
         for psii in PSIIs:
             psii.updatePhotonFlux(PhotonFlux)
             if light == "on":
-                if psii.probabilityAbsorbed < 1:                            #case of single and multiple excitations
-                    Absorbed, Fluoresced = psii.update(light)
-                    self.updateAbsorbedFluorescedCount(Absorbed, Fluoresced)
-
+                if psii.probabilityAbsorbed < 1:                            #case of single excitations
+                    Absorbed, Fluoresced, PQ = psii.update(light)
+                    self.updateCounters(Absorbed, Fluoresced, PQ)
+                    psii.updatePQ(self.actualPQPool, self.maxPQPool)
                 else:
-                    for excitation in range(0,int(psii.probabilityAbsorbed)):
-                        Absorbed, Fluoresced = psii.update(light)
-                        self.updateAbsorbedFluorescedCount(Absorbed, Fluoresced)
+                    for excitation in range(0,int(psii.probabilityAbsorbed)):   #case if multiple excitations
+                        Absorbed, Fluoresced, PQ = psii.update(light)
+                        self.updateCounters(Absorbed, Fluoresced, PQ)
+                        psii.updatePQ(self.actualPQPool, self.maxPQPool)
 
             if light == "off":
                 if psii.update(light) == True:
@@ -300,14 +318,17 @@ class Leaf(object):
         """            
         self.totalFluoresced = 0
         self.totalAbsorbed = 0
+        self.PQ = 0
         PSIIs = self.PSIIs 
         PhotonFlux = PSIIs[0].photonFlux
         for layer in self.Layers:
             Fluoresced, Absorbed = layer.updatePSIIs(light, PhotonFlux)
             self.totalFluoresced += Fluoresced
             self.totalAbsorbed += Absorbed
+            self.PQ += layer.actualPQPool
             PhotonFlux = PhotonFlux - Absorbed + Fluoresced
-        return self.totalFluoresced, self.totalAbsorbed
+            #print layer.actualPQPool            
+        return self.totalFluoresced, self.totalAbsorbed, self.PQ
 
 selectedTimepoint = []
 
@@ -316,16 +337,17 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     Runs simulations and plots graphs for PSIIs in the leaf.
     """
     global selectedTimepoint
-    timepoint = 10
+    timepoint = 1000
     trialsSum = [0]
+    
     for time in range(1, timeSteps + 1):
         trialsSum.append(0)
 
     for trial in range(0, trialsNum):
         PSIIs = []                                      #Creating PSIIs
         for nr in range(0, numPSIIs):
-            #PSIIs.append(PSII_DCMU(size = size, state = "ground", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
-            PSIIs.append(PSII_QA(size = size, state = "ground", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
+            #PSIIs.append(PSII_DCMU(size = size, state = "open", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
+            PSIIs.append(PSII_QB(size = size, state = "open", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
         simulatedLeaf = Leaf(PSIIs, layers)             #Creating the leaf
         simulatedLeaf.assignPSIIToLayers()              #Creating layers in the leaf
         simulatedLeaf.createLayers()
@@ -333,7 +355,7 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
         Fluorescence = [0]
 
         for time in range(1, timeSteps+1):
-            Fluoresced, Absorbed = simulatedLeaf.updateLayers(light = "on")
+            Fluoresced, Absorbed, PQ = simulatedLeaf.updateLayers(light = "on")
             #print "Fluoresced: %i Absorbed: %i" % (Fluoresced, Absorbed)
             Fluorescence.append(Fluoresced)
             trialsSum[time] += Fluorescence[time]
@@ -377,12 +399,13 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 #plt.close()
 #plt.show()
 
-numPSIIs = 10000
+numPSIIs = 1000
 timeSteps = 1000
-trialsNum = 1
+trialsNum = 100
 size = 1
 layer = 1
-photonFluxList = range(200,1001,200)
+#photonFluxList = range(200,1001,200)
+photonFluxList = [500]
 
 projectPath = '/home/ludwik/Documents/python/Monte-Carlo/Layers and size/'
 def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
@@ -495,5 +518,5 @@ plt.close()
 #numPSIIs = 10
 #PSIIs = []
 #for nr in range(0, numPSIIs):
-#    PSIIs.append(PSII(size = size, state = "ground", photonFlux = photonFlux, leafArea = 1000, probabilityFluorescence = 0.2, probablilityAnihilation = 0.01))
+#    PSIIs.append(PSII(size = size, state = "open", photonFlux = photonFlux, leafArea = 1000, probabilityFluorescence = 0.2, probablilityAnihilation = 0.01))
 #    
