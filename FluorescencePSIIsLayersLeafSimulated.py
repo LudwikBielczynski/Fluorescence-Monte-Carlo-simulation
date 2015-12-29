@@ -195,7 +195,7 @@ class Layer(object):
     """
     Representation of layers in the leaf.
     """
-    def __init__(self, PSIIs, layersNumber):
+    def __init__(self, PSIIs, layersNumber, PQnumber):
         """
 
         Initialization function, saves the PSIIs.
@@ -207,9 +207,8 @@ class Layer(object):
         Fcount: int representing the number of photons fluoresced from a layer
         AbsorbedCount: int representing the number of photons absorbed by the layer        
         """
-        PQs = 1000
-        self.maxPQPool = PQs
-        self.actualPQPool = PQs
+        self.maxPQPool = PQnumber
+        self.actualPQPool = PQnumber
         self.PSIIs = PSIIs
         self.layersNumber = layersNumber
         self.FCount = 0
@@ -237,6 +236,9 @@ class Layer(object):
             PSIIs = self.PSIIs
         self.FCount = 0
         self.AbsorbedCount = 0
+        self.QB = 0
+        self.QBminus = 0
+        self.QB2minus = 0
         for psii in PSIIs:
             psii.updatePhotonFlux(PhotonFlux)
             if light == "on":
@@ -249,18 +251,25 @@ class Layer(object):
                         Absorbed, Fluoresced, PQ = psii.update(light)
                         self.updateCounters(Absorbed, Fluoresced, PQ)
                         psii.updatePQ(self.actualPQPool, self.maxPQPool)
+                if psii.stateQBReduction == 0:
+                    self.QB += 1
+                if psii.stateQBReduction == 1:
+                    self.QBminus += 1
+                if psii.stateQBReduction == 2:
+                    self.QB2minus += 1
+
 
             if light == "off":
                 if psii.update(light) == True:
                     self.FCount += 1
 
-        return self.FCount, self.AbsorbedCount
+        return self.FCount, self.AbsorbedCount, self.QB, self.QBminus, self.QB2minus
 
 class Leaf(object):
     """
     Representation of a simplified leaf.
     """    
-    def __init__(self, PSIIs, layersNumber):
+    def __init__(self, PSIIs, layersNumber, PQnumber):
         """
         
         Initialization function, saves the PSIIs
@@ -273,6 +282,11 @@ class Leaf(object):
         totalFluoresced: int representing the number of photons Fluoresced by the whole leaf
         totalAbsorbed: int representing the number of photons Absorbed by the whole leaf
         """
+        self.PQnumber = PQnumber
+        self.QB = 0
+        self.QBminus = 0
+        self.QB2minus = 0
+
         self.PSIIs = PSIIs
         self.layersNumber = layersNumber
 
@@ -308,7 +322,7 @@ class Leaf(object):
         """        
         for layer in range(0, self.layersNumber):
             PSIIs = self.getPSIIsInLayer(layer)
-            self.Layers.append(Layer(PSIIs, layer))
+            self.Layers.append(Layer(PSIIs, layer, self.PQnumber))
 
     def updateLayers(self, light):
         """
@@ -319,49 +333,64 @@ class Leaf(object):
         self.totalFluoresced = 0
         self.totalAbsorbed = 0
         self.PQ = 0
+        self.QB = 0
+        self.QBminus = 0
+        self.QB2minus = 0
         PSIIs = self.PSIIs 
         PhotonFlux = PSIIs[0].photonFlux
         for layer in self.Layers:
-            Fluoresced, Absorbed = layer.updatePSIIs(light, PhotonFlux)
+            Fluoresced, Absorbed, QB, QBminus, QB2minus = layer.updatePSIIs(light, PhotonFlux)
             self.totalFluoresced += Fluoresced
             self.totalAbsorbed += Absorbed
             self.PQ += layer.actualPQPool
+            self.QB += QB
+            self.QBminus += QBminus
+            self.QB2minus += QB2minus
             PhotonFlux = PhotonFlux - Absorbed + Fluoresced
-            #print layer.actualPQPool            
-        return self.totalFluoresced, self.totalAbsorbed, self.PQ
+          
+        return self.totalFluoresced, self.totalAbsorbed, self.PQ, self.QB, self.QBminus, self.QB2minus
 
 selectedTimepoint = []
 
-def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, photonFlux = 1000, layers = 1):
+def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, photonFlux = 1000, layers = 1, PQnumber = 1000):
     """
     Runs simulations and plots graphs for PSIIs in the leaf.
     """
     global selectedTimepoint
     timepoint = 1000
     trialsSum = [0]
+    PQsum = [100]
+    QBsum = [100]
+    QBminusSum = [0]
+    QB2minusSum = [0]            
     
     for time in range(1, timeSteps + 1):
         trialsSum.append(0)
+        PQsum.append(0)
+        QBsum.append(0)
+        QBminusSum.append(0)
+        QB2minusSum.append(0)
 
     for trial in range(0, trialsNum):
         PSIIs = []                                      #Creating PSIIs
         for nr in range(0, numPSIIs):
             #PSIIs.append(PSII_DCMU(size = size, state = "open", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
             PSIIs.append(PSII_QB(size = size, state = "open", photonFlux = photonFlux, leafArea = 10000, probabilityFluorescence = 0.3, probablilityAnihilation = 0.01))
-        simulatedLeaf = Leaf(PSIIs, layers)             #Creating the leaf
+        simulatedLeaf = Leaf(PSIIs, layers, PQnumber)             #Creating the leaf
         simulatedLeaf.assignPSIIToLayers()              #Creating layers in the leaf
         simulatedLeaf.createLayers()
 
         Fluorescence = [0]
+        PQlist = [PQnumber]
 
         for time in range(1, timeSteps+1):
-            Fluoresced, Absorbed, PQ = simulatedLeaf.updateLayers(light = "on")
+            Fluoresced, Absorbed, PQ, QB, QBminus, QB2minus = simulatedLeaf.updateLayers(light = "on")
             #print "Fluoresced: %i Absorbed: %i" % (Fluoresced, Absorbed)
-            Fluorescence.append(Fluoresced)
-            trialsSum[time] += Fluorescence[time]
-
-        for time in range(1, timeSteps+1):
-            Fluorescence[time] /= photonFlux
+            trialsSum[time] += Fluoresced
+            PQsum[time] += PQ
+            QBsum[time] += QB
+            QBminusSum[time] += QBminus
+            QB2minusSum[time] += QB2minus
 
         #for time in range(timeSteps + 1, timeSteps*2 + 2):
         #    Fluoresced, Absorbed = simulatedLeaf.updateLayers(light = "off")
@@ -371,10 +400,32 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
         if trial%10 == 0:
             print 'Trial nr: %i' % trial
 
+    for time in range(1, timeSteps+1):
+        trialsSum[time] /= float(trialsNum)
+        PQsum[time] /= (float(trialsNum) * PQnumber)/100
+        QBsum[time] /= (float(trialsNum) * numPSIIs)/100
+        QBminusSum[time] /= (float(trialsNum) * numPSIIs)/100
+        QB2minusSum[time] /= (float(trialsNum) * numPSIIs)/100
+
+    fig, ax1 = plt.subplots()
     selectedTimepoint.append(trialsSum[timepoint])
-    plt.plot(range(0,timeSteps + 1), trialsSum, label = "Size: " + str(size) + " PhotonFlux: " + str(photonFlux) + " Layers: " + str(layers) )
-    plt.xlim(xmin = 0,xmax = timeSteps + 1)
-    return trialsSum
+    
+    Fluorescence = ax1.plot(range(0,timeSteps + 1), trialsSum, 'b-', label = "Size: " + str(size) + " PhotonFlux: " + str(photonFlux) + " Layers: " + str(layers) )
+    ax1.set_xlabel("Time [ms]")
+    ax1.set_xscale('log')
+    ax1.set_ylabel("Ft [counts]")
+    ax1.set_xlim(xmin = 2,xmax = timeSteps + 1)
+
+    ax2 = ax1.twinx()
+    PQ = ax2.plot(range(0,timeSteps + 1), PQsum, 'r-', label = "PQ pool" )
+    ax2.set_ylabel("[%]")
+    QB = ax2.plot(range(0,timeSteps + 1), QBsum, 'g-', label = "QB pool" )
+    QBminus = ax2.plot(range(0,timeSteps + 1), QBminusSum, 'y-', label = "QB- pool" )
+    QB2minus = ax2.plot(range(0,timeSteps + 1), QB2minusSum, 'c-', label = "QB2- pool" )        
+    lns = Fluorescence + PQ + QB + QBminus + QB2minus
+    labs = [l.get_label() for l in lns]
+    ax1.legend(lns, labs, loc = (.05, .5), fontsize = 'small')
+    return trialsSum, PQsum
 
 #####################################################
 ###################SIMULATION########################
@@ -412,11 +463,6 @@ def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
     for light in photonFluxList:
         print 'Light: %i' % light
         simulatingLeaf(numPSIIs = numPSIIs, timeSteps = timeSteps, trialsNum = trialsNum, size = size, photonFlux = light, layers = layer)
-    plt.legend(loc = "best", fontsize = 'small')
-    plt.xlabel("Time [ms]")
-    plt.xscale('log')
-    plt.xlim(xmin = 1, xmax = timeSteps)
-    plt.ylabel("Ft [counts]")
     fileName = str('numPSIIs%i timeSteps%i trialsNum%i size%.2f layers%i lightDependency.svg' % (numPSIIs, timeSteps, trialsNum, size, layer))
     plt.savefig(projectPath + "QA" + fileName, width = 30, height = 8)
     #plt.savefig(projectPath + fileName, width = 30, height = 8)    
@@ -438,64 +484,16 @@ for time in range(0, len(selectedTimepoint1)):
     selectedTimepoint2[time] /= float(photonFluxList[time])
     selectedTimepoint2[time] /= trialsNum
 
-selectedTimepoint = []
 
+#plt.plot(photonFluxList, selectedTimepoint1, label = "PSII size = 1 layers = 1")
+#plt.plot(photonFluxList, selectedTimepoint2, label = "PSII size = 0.5 layers = 1")#
 
-size = 1
-layer = 2
-Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer)
-
-
-selectedTimepoint3 = selectedTimepoint 
-for time in range(0, len(selectedTimepoint1)):
-    selectedTimepoint3[time] /= float(photonFluxList[time])
-    selectedTimepoint3[time] /= trialsNum
-
-selectedTimepoint = []
-size = 0.5
-layer = 2
-Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer)
-
-selectedTimepoint4 = selectedTimepoint 
-for time in range(0, len(selectedTimepoint1)):
-    selectedTimepoint4[time] /= float(photonFluxList[time])
-    selectedTimepoint4[time] /= trialsNum
-
-selectedTimepoint = []
-
-size = 1
-layer = 3
-Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer)
-
-selectedTimepoint5 = selectedTimepoint 
-for time in range(0, len(selectedTimepoint1)):
-    selectedTimepoint5[time] /= float(photonFluxList[time])
-    selectedTimepoint5[time] /= trialsNum
-
-selectedTimepoint = []
-size = 0.5
-layer = 3
-Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer)
-
-selectedTimepoint6 = selectedTimepoint 
-for time in range(0, len(selectedTimepoint1)):
-    selectedTimepoint6[time] /= float(photonFluxList[time])
-    selectedTimepoint6[time] /= trialsNum    
-
-plt.plot(photonFluxList, selectedTimepoint1, label = "PSII size = 1 layers = 1")
-plt.plot(photonFluxList, selectedTimepoint2, label = "PSII size = 0.5 layers = 1")
-
-plt.plot(photonFluxList, selectedTimepoint3, label = "PSII size = 1 layers = 2")
-plt.plot(photonFluxList, selectedTimepoint4, label = "PSII size = 0.5 layers = 2")
-
-plt.plot(photonFluxList, selectedTimepoint5, label = "PSII size = 1 layers = 3")
-plt.plot(photonFluxList, selectedTimepoint6, label = "PSII size = 0.5 layers = 3")
-plt.legend(loc = "best", fontsize = 'x-small')
-plt.xlabel("PPFD")
-plt.ylabel("F[t=10]/PPFD")
-fileName = str('Ft to PPFD Normalised LightDependency trialsNum = %i.svg' % trialsNum)
-plt.savefig(projectPath + fileName, width = 20, height = 7)
-plt.close()
+#plt.legend(loc = "best", fontsize = 'x-small')
+#plt.xlabel("PPFD")
+#plt.ylabel("F[t=10]/PPFD")
+#fileName = str('Ft to PPFD Normalised LightDependency trialsNum = %i.svg' % trialsNum)
+#plt.savefig(projectPath + fileName, width = 20, height = 7)
+#plt.close()
 
 
 
