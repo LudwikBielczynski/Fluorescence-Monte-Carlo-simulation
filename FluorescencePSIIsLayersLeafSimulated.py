@@ -135,10 +135,12 @@ class PSII_QB(PSII_DCMU):
             probabilityDecay
         """
         PSII_DCMU.__init__(self, layer, size, state, photonFlux, leafArea, probabilityFluorescence, probablilityAnihilation)
+        self.stateQAReduction = 0
         self.stateQBReduction = 0
         self.probabilityPQdiffusion = 0.3
 
-        self.probabilityQAtoQB = 0.05
+        self.probablityPheotoQA = 0.1
+        self.probabilityQAtoQB = 0.1
 
     def update(self, light):
         """
@@ -164,9 +166,14 @@ class PSII_QB(PSII_DCMU):
                 self.stateQBReduction = 0
                 PQdiffuse = True
 
-            if self.state == "closed ground" and self.stateQBReduction != 2 and random.random() <= self.probabilityQAtoQB: #Added reopening of RCs
+            if self.stateQAReduction == 0 and random.random() <= self.probablityPheotoQA:
+                self.state = "open"                 
+                self.stateQAReduction += 1
+
+            if self.state == "closed ground" and self.stateQAReduction == 1 and self.stateQBReduction != 2 and random.random() <= self.probabilityQAtoQB: #Added reopening of RCs
                 self.state = "open"  
                 self.stateQBReduction += 1
+                self.stateQAReduction -= 1
 
             if random.random() <= self.probabilityAbsorbed:
                 Absorbed = True
@@ -236,6 +243,8 @@ class Layer(object):
             PSIIs = self.PSIIs
         self.FCount = 0
         self.AbsorbedCount = 0
+        self.QA = 0
+        self.QAminus = 0        
         self.QB = 0
         self.QBminus = 0
         self.QB2minus = 0
@@ -251,6 +260,11 @@ class Layer(object):
                         Absorbed, Fluoresced, PQ = psii.update(light)
                         self.updateCounters(Absorbed, Fluoresced, PQ)
                         psii.updatePQ(self.actualPQPool, self.maxPQPool)
+
+                if psii.stateQAReduction == 0:
+                    self.QA += 1
+                if psii.stateQAReduction == 1:
+                    self.QAminus += 1                    
                 if psii.stateQBReduction == 0:
                     self.QB += 1
                 if psii.stateQBReduction == 1:
@@ -263,7 +277,7 @@ class Layer(object):
                 if psii.update(light) == True:
                     self.FCount += 1
 
-        return self.FCount, self.AbsorbedCount, self.QB, self.QBminus, self.QB2minus
+        return self.FCount, self.AbsorbedCount, self.QA, self.QAminus, self.QB, self.QBminus, self.QB2minus
 
 class Leaf(object):
     """
@@ -283,6 +297,8 @@ class Leaf(object):
         totalAbsorbed: int representing the number of photons Absorbed by the whole leaf
         """
         self.PQnumber = PQnumber
+        self.QA = 0
+        self.QAminus = 0
         self.QB = 0
         self.QBminus = 0
         self.QB2minus = 0
@@ -333,22 +349,26 @@ class Leaf(object):
         self.totalFluoresced = 0
         self.totalAbsorbed = 0
         self.PQ = 0
+        self.QA = 0
+        self.QAminus = 0        
         self.QB = 0
         self.QBminus = 0
         self.QB2minus = 0
         PSIIs = self.PSIIs 
         PhotonFlux = PSIIs[0].photonFlux
         for layer in self.Layers:
-            Fluoresced, Absorbed, QB, QBminus, QB2minus = layer.updatePSIIs(light, PhotonFlux)
+            Fluoresced, Absorbed, QA, QAminus, QB, QBminus, QB2minus = layer.updatePSIIs(light, PhotonFlux)
             self.totalFluoresced += Fluoresced
             self.totalAbsorbed += Absorbed
             self.PQ += layer.actualPQPool
+            self.QA += QA
+            self.QAminus += QAminus            
             self.QB += QB
             self.QBminus += QBminus
             self.QB2minus += QB2minus
             PhotonFlux = PhotonFlux - Absorbed + Fluoresced
           
-        return self.totalFluoresced, self.totalAbsorbed, self.PQ, self.QB, self.QBminus, self.QB2minus
+        return self.totalFluoresced, self.totalAbsorbed, self.PQ, self.QA, self.QAminus, self.QB, self.QBminus, self.QB2minus
 
 selectedTimepoint = []
 
@@ -360,6 +380,8 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     timepoint = 1000
     trialsSum = [0]
     PQsum = [100]
+    QAsum = [100] 
+    QAminusSum = [0]        
     QBsum = [100]
     QBminusSum = [0]
     QB2minusSum = [0]            
@@ -367,6 +389,8 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     for time in range(1, timeSteps + 1):
         trialsSum.append(0)
         PQsum.append(0)
+        QAsum.append(0)
+        QAminusSum.append(0)        
         QBsum.append(0)
         QBminusSum.append(0)
         QB2minusSum.append(0)
@@ -384,10 +408,12 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
         PQlist = [PQnumber]
 
         for time in range(1, timeSteps+1):
-            Fluoresced, Absorbed, PQ, QB, QBminus, QB2minus = simulatedLeaf.updateLayers(light = "on")
+            Fluoresced, Absorbed, PQ, QA, QAminus, QB, QBminus, QB2minus = simulatedLeaf.updateLayers(light = "on")
             #print "Fluoresced: %i Absorbed: %i" % (Fluoresced, Absorbed)
             trialsSum[time] += Fluoresced
             PQsum[time] += PQ
+            QAsum[time] += QA
+            QAminusSum[time] += QAminus
             QBsum[time] += QB
             QBminusSum[time] += QBminus
             QB2minusSum[time] += QB2minus
@@ -403,6 +429,8 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     for time in range(1, timeSteps+1):
         trialsSum[time] /= float(trialsNum)
         PQsum[time] /= (float(trialsNum) * PQnumber)/100
+        QAsum[time] /= (float(trialsNum) * numPSIIs)/100
+        QAminusSum[time] /= (float(trialsNum) * numPSIIs)/100        
         QBsum[time] /= (float(trialsNum) * numPSIIs)/100
         QBminusSum[time] /= (float(trialsNum) * numPSIIs)/100
         QB2minusSum[time] /= (float(trialsNum) * numPSIIs)/100
@@ -419,10 +447,12 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     ax2 = ax1.twinx()
     PQ = ax2.plot(range(0,timeSteps + 1), PQsum, 'r-', label = "PQ pool" )
     ax2.set_ylabel("[%]")
+    QA = ax2.plot(range(0,timeSteps + 1), QAsum, 'm-', label = "QA pool" )
+    QAminus = ax2.plot(range(0,timeSteps + 1), QAminusSum, 'm--', label = "QA- pool" )    
     QB = ax2.plot(range(0,timeSteps + 1), QBsum, 'g-', label = "QB pool" )
-    QBminus = ax2.plot(range(0,timeSteps + 1), QBminusSum, 'y-', label = "QB- pool" )
-    QB2minus = ax2.plot(range(0,timeSteps + 1), QB2minusSum, 'c-', label = "QB2- pool" )        
-    lns = Fluorescence + PQ + QB + QBminus + QB2minus
+    QBminus = ax2.plot(range(0,timeSteps + 1), QBminusSum, 'g--', label = "QB- pool" )
+    QB2minus = ax2.plot(range(0,timeSteps + 1), QB2minusSum, 'g:', label = "QB2- pool" )        
+    lns = Fluorescence + PQ + QA + QAminus + QB + QBminus + QB2minus
     labs = [l.get_label() for l in lns]
     ax1.legend(lns, labs, loc = (.05, .5), fontsize = 'small')
     return trialsSum, PQsum
