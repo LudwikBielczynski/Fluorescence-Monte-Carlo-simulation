@@ -51,12 +51,10 @@ class PSII(object):
 
         self.P_ABS = self.photonFlux/float(self.leafArea) * self.size
         self.P_D = 1.0
-        #self.P_D = 1 - np.exp(-.1/3.5)
         self.P_F = 0.3
         self.P_QA = 1.0                  #Based on Lazar and Schansker, 2009
         self.P_QB = 0.35              
         self.P_QB2 = 0.175
-
 
         self.P_QA_r = 0.0
         self.P_QB_r = 0.0175
@@ -65,9 +63,7 @@ class PSII(object):
         self.P_PQ_initial = 0.08
         self.P_PQ = self.P_PQ_initial
         self.P_PQ_r = 0.005
-        #self.P_QA_r = 0.0
-        #self.P_QB_r = 0.0
-        #self.P_QB2_r = 0.0
+
 
         self.graphPSIITransitions = createPSIITransitionGraph(self.P_ABS, self.P_D, self.P_QA, self.P_QB, self.P_QB2, self.P_PQ, self.P_QA_r, self.P_QB_r, self.P_QB2_r)
         self.state = 0      #Node in the GraphPSIITransitions that the PSII is currently occupying
@@ -451,7 +447,7 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 #####################################################
 numPSIIs = 1000
 timeSteps = 10000
-trialsNum = 1
+trialsNum = 10
 size = 1
 layer = 1
 PQnumber = 3750 # based on Oja et al., 2011
