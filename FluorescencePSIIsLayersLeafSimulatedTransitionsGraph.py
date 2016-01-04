@@ -50,16 +50,20 @@ class PSII(object):
         self.size = size
 
         self.P_ABS = self.photonFlux/float(self.leafArea) * self.size
-        self.P_D = 1 - np.exp(-1/3.5) 
+        self.P_D = 1 - np.exp(-.1/3.5)
         self.P_F = 0.3
-        self.P_QA = 0.3
-        self.P_QB = 0.3
-        self.P_QB2 = 0.2
-        self.P_PQ = 0.0
+        self.P_QA = 1.0                  #Based on Lazar and Schansker, 2009
+        self.P_QB = 0.35              
+        self.P_QB2 = 0.175
+        self.P_PQ = 0.08
 
         self.P_QA_r = 0.0
-        self.P_QB_r = 0.0
-        self.P_QB2_r = 0.0
+        self.P_QB_r = 0.0175
+        self.P_QB2_r = 0.0035
+
+        #self.P_QA_r = 0.0
+        #self.P_QB_r = 0.0
+        #self.P_QB2_r = 0.0
 
         self.graphPSIITransitions = createPSIITransitionGraph(self.P_ABS, self.P_D, self.P_QA, self.P_QB, self.P_QB2, self.P_PQ, self.P_QA_r, self.P_QB_r, self.P_QB2_r)
         self.state = 0      #Node in the GraphPSIITransitions that the PSII is currently occupying
@@ -76,7 +80,6 @@ class PSII(object):
         self.photonFlux = PhotonFlux
         self.P_ABS = self.photonFlux /float(self.leafArea) * self.size
         self.graphPSIITransitions = createPSIITransitionGraph(self.P_ABS, self.P_D, self.P_QA, self.P_QB, self.P_QB2, self.P_PQ, self.P_QA_r, self.P_QB_r, self.P_QB2_r)
-
 
     def updateState(self):
         self.stateA = self.graphPSIITransitions.vs[self.state]["A"]
@@ -95,7 +98,6 @@ class PSII(object):
 
         returns a tuple of three booleans: True/False if a photon is absorbed, True/False if a photon is fluoresced, True/False if a PQ is diffused
         """            
-        #nrPossibleTransitions = self.graphPSIITransitions.degree(self.state, type = "out")
         transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
         transitionListProbabilities = self.graphPSIITransitions.es.select(_source=self.state)[:]["Probability"]
         Absorbed = False
@@ -133,19 +135,32 @@ class PSII(object):
                 if transitionList[transition] != 'Absorption' and transitionList[transition] != 'Excitation decay' and transitionList[transition] != 'PQH2 diffusion':
                     transitionsElectronTransfer.append([transitionList[transition], transitionsElectronTransferProbabilities[transition]])
                     P_ETr += transitionsElectronTransferProbabilities[transition]
-            transitionsElectronTransfer.sort(key=lambda x: x[1])
+            if len(transitionsElectronTransfer) != 0:
+                transitionsElectronTransfer.sort(key=lambda x: x[1])
+                randomizedNumber = random.random()
 
-            randomizedNumber = random.random()
-            if randomizedNumber <= P_ETr:
-                for transfer in transitionsElectronTransfer:
-                    if randomizedNumber <= transfer[1]/P_ETr:
+                if len(transitionsElectronTransfer) == 1:
+                    transfer = transitionsElectronTransfer[0]
+                    if randomizedNumber <= transfer[1]:
                         self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = transfer[0])[0].target
                         self.updateState()
                         transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
 
+                if len(transitionsElectronTransfer) == 2:
+                    if randomizedNumber <= P_ETr:
+                        transfer = transitionsElectronTransfer[0]
+                        if randomizedNumber <= transfer[1]/P_ETr:
+                            self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = transfer[0])[0].target
+                            self.updateState()
+                            transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
+                        transferBack = transitionsElectronTransfer[1]
+                        if randomizedNumber >= transfer[1]/P_ETr:
+                            self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = transferBack[0])[0].target
+                            self.updateState()
+                            transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
             #PQ diffusion
             if 'PQH2 diffusion' in transitionList and randomizedNumber <= self.P_PQ:
-                PQdiffuse = True         
+                PQdiffuse = True
                 self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = "PQH2 diffusion")[0].target
                 self.updateState()
 
@@ -153,7 +168,6 @@ class PSII(object):
 
     def updatePQ(self, actualPQPool, maxPQPool):
         self.P_PQ = float(actualPQPool)/maxPQPool
-
 
 class Layer(object):
     """
@@ -210,17 +224,17 @@ class Layer(object):
                 if psii.P_ABS < 1:                            #case of single excitations
                     Absorbed, Fluoresced, PQ = psii.update(light)
                     self.updateCounters(Absorbed, Fluoresced, PQ)
-                    psii.updatePQ(self.actualPQPool, self.maxPQPool)
+                    #psii.updatePQ(self.actualPQPool, self.maxPQPool)
                 else:
                     for excitation in range(0,int(psii.P_ABS)):   #case if multiple excitations
                         Absorbed, Fluoresced, PQ = psii.update(light)
                         self.updateCounters(Absorbed, Fluoresced, PQ)
-                        psii.updatePQ(self.actualPQPool, self.maxPQPool)
+                        #psii.updatePQ(self.actualPQPool, self.maxPQPool)
 
             if light == "off":
                 Absorbed, Fluoresced, PQ = psii.update(light)
                 self.updateCounters(Absorbed, Fluoresced, PQ)
-                psii.updatePQ(self.actualPQPool, self.maxPQPool)                
+                #psii.updatePQ(self.actualPQPool, self.maxPQPool)                
 
             if psii.stateQA == 0:
                 self.QA += 1
@@ -360,6 +374,8 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
         PQlist = [PQnumber]
 
         for time in range(1, timeSteps+1):
+            if time%250 == 0:
+                print time
             Fluoresced, Absorbed, PQ, QA, QAminus, QB, QBminus, QB2minus = simulatedLeaf.updateLayers(light = "on")
             #print "Fluoresced: %i Absorbed: %i" % (Fluoresced, Absorbed)
             trialsSum[time] += Fluoresced
@@ -370,10 +386,11 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
             QBminusSum[time] += QBminus
             QB2minusSum[time] += QB2minus
 
-        if trial%10 == 0:
+        if trial%1 == 0:
             print 'Trial nr: %i' % trial
 
-    for time in range(1, timeSteps+1):
+    timeReal = range(0,timeSteps + 1)
+    for time in range(1, timeSteps + 1):
         trialsSum[time] /= float(trialsNum)
         PQsum[time] /= (float(trialsNum) * PQnumber)/100
         QAsum[time] /= (float(trialsNum) * numPSIIs)/100
@@ -381,36 +398,39 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
         QBsum[time] /= (float(trialsNum) * numPSIIs)/100
         QBminusSum[time] /= (float(trialsNum) * numPSIIs)/100
         QB2minusSum[time] /= (float(trialsNum) * numPSIIs)/100
+        timeReal[time] /= float(timeSteps + 1)
 
     fig, ax1 = plt.subplots()
-    
-    Fluorescence = ax1.plot(range(0,timeSteps + 1), trialsSum, 'b-', label = "Size: " + str(size) + " PhotonFlux: " + str(photonFlux) + " Layers: " + str(layers) )
-    ax1.set_xlabel("Time [ms]")
+
+    ax1.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])    
+    Fluorescence = ax1.plot(timeReal, trialsSum, 'b-', label = "Size: " + str(size) + " PhotonFlux: " + str(photonFlux) + " Layers: " + str(layers) )
+    ax1.set_xlabel("Time [s]")
     ax1.set_xscale('log')
     ax1.set_ylabel("Ft [counts]")
-    ax1.set_xlim(xmin = 2,xmax = timeSteps + 1)
 
     ax2 = ax1.twinx()
-    PQ = ax2.plot(range(0,timeSteps + 1), PQsum, 'r-', label = "PQ pool" )
+    ax2.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])        
+    PQ = ax2.plot(timeReal, PQsum, 'r-', label = "PQ pool" )
     ax2.set_ylabel("[%]")
-    QA = ax2.plot(range(0,timeSteps + 1), QAsum, 'm-', label = "QA pool" )
-    QAminus = ax2.plot(range(0,timeSteps + 1), QAminusSum, 'm--', label = "QA- pool" )    
-    QB = ax2.plot(range(0,timeSteps + 1), QBsum, 'g-', label = "QB pool" )
-    QBminus = ax2.plot(range(0,timeSteps + 1), QBminusSum, 'g--', label = "QB- pool" )
-    QB2minus = ax2.plot(range(0,timeSteps + 1), QB2minusSum, 'g:', label = "QB2- pool" )        
-    lns = Fluorescence + PQ + QA + QAminus + QB + QBminus + QB2minus
+    QA = ax2.plot(timeReal, QAsum, 'm-', label = "QA pool" )
+    QAminus = ax2.plot(timeReal, QAminusSum, 'm--', label = "QA- pool" )    
+    QB = ax2.plot(timeReal, QBsum, 'g-', label = "QB pool" )
+    QBminus = ax2.plot(timeReal, QBminusSum, 'g--', label = "QB- pool" )
+    QB2minus = ax2.plot(timeReal, QB2minusSum, 'g:', label = "QB2- pool" )        
+    lns = Fluorescence + QA + QAminus + QB + QBminus + QB2minus + PQ
     labs = [l.get_label() for l in lns]
-    ax1.legend(lns, labs, loc = (.05, .5), fontsize = 'small')
+    ax1.legend(lns, labs, loc = 'best', fontsize = 'small')
     return trialsSum, PQsum
 
 #####################################################
 ###################SIMULATION########################
 #####################################################
 numPSIIs = 1000
-timeSteps = 1000
-trialsNum = 30
+timeSteps = 10000
+trialsNum = 10
 size = 1
 layer = 1
+PQnumber = 3750 # based on Oja et al., 2011
 #photonFluxList = range(200,1001,200)
 photonFluxList = [1000]
 
@@ -418,7 +438,7 @@ projectPath = '/home/ludwik/Documents/python/Monte-Carlo/Layers and size/'
 def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
     for light in photonFluxList:
         print 'Light: %i' % light
-        simulatingLeaf(numPSIIs = numPSIIs, timeSteps = timeSteps, trialsNum = trialsNum, size = size, photonFlux = light, layers = layer)
+        simulatingLeaf(numPSIIs = numPSIIs, timeSteps = timeSteps, trialsNum = trialsNum, size = size, photonFlux = light, layers = layer, PQnumber = PQnumber)
     fileName = str('numPSIIs%i timeSteps%i trialsNum%i size%.2f layers%i lightDependency.svg' % (numPSIIs, timeSteps, trialsNum, size, layer))
     plt.savefig(projectPath + "QA" + fileName, width = 30, height = 8)
     plt.close()

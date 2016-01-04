@@ -35,7 +35,7 @@ GraphPSIITransitions.vs["QB"] = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]
 #print GraphPSIITransitions.degree(type = "out")
 
 #length of the list
-vertex = 2
+vertex = 11
 
 transitionList = GraphPSIITransitions.es.select(_source=vertex)[:]["Transition"]
 
@@ -50,6 +50,7 @@ print transitionListProbabilities
 for transfer in transitionListProbabilities:
 	print transfer
 
+print GraphPSIITransitions.es.select(_source=vertex, Transition = transfer[0])[0].target
 
 #print GraphPSIITransitions.es.select(_source=vertex)[:]["Transition"]
 #print GraphPSIITransitions.es.select(_source=vertex)[:]["Probability"]
