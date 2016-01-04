@@ -62,7 +62,8 @@ class PSII(object):
         self.P_QB_r = 0.0175
         self.P_QB2_r = 0.0035
 
-        self.P_PQ = 0.08
+        self.P_PQ_initial = 0.08
+        self.P_PQ = self.P_PQ_initial
         self.P_PQ_r = 0.005
         #self.P_QA_r = 0.0
         #self.P_QB_r = 0.0
@@ -89,7 +90,7 @@ class PSII(object):
         self.stateQA = self.graphPSIITransitions.vs[self.state]["QA"]
         self.stateQB = self.graphPSIITransitions.vs[self.state]["QB"]        
 
-    def update(self, light):
+    def update(self, light = "on"):
         """
         Function describing the space of possible transition without or under illumination. The PSII is assumed have a QB site that is able to accept an electron.
         The reopening of RCs is added.
@@ -177,11 +178,14 @@ class PSII(object):
                 self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = "PQH2 diffusion")[0].target
                 self.updateState()
 
-
         return Absorbed, Fluoresced, PQdiffuse
 
     def updatePQ(self, actualPQPool, maxPQPool):
-        self.P_PQ = float(actualPQPool)/maxPQPool
+#        if actualPQPool <= 1:
+#            self.P_PQ = 0
+#        else:
+#            self.P_PQ = self.P_PQ_initial
+        self.P_PQ = self.P_PQ_initial * (float(actualPQPool)/maxPQPool)
 
 class Layer(object):
     """
@@ -238,21 +242,21 @@ class Layer(object):
                 if psii.P_ABS < 1:                            #case of single excitations
                     Absorbed, Fluoresced, PQ = psii.update(light)
                     self.updateCounters(Absorbed, Fluoresced, PQ)
-                    if random.random() <= psii.P_PQ_r:
+                    if random.random() <= psii.P_PQ_r and self.actualPQPool < self.maxPQPool:
                         self.actualPQPool += 1
-                    #psii.updatePQ(self.actualPQPool, self.maxPQPool)
+                    psii.updatePQ(self.actualPQPool, self.maxPQPool)
                 else:
                     for excitation in range(0,int(psii.P_ABS)):   #case if multiple excitations
                         Absorbed, Fluoresced, PQ = psii.update(light)
                         self.updateCounters(Absorbed, Fluoresced, PQ)
-                        if random.random() <= psii.P_PQ_r:
+                        if random.random() <= psii.P_PQ_r and self.actualPQPool < self.maxPQPool:
                             self.actualPQPool += 1                        
-                        #psii.updatePQ(self.actualPQPool, self.maxPQPool)
+                        psii.updatePQ(self.actualPQPool, self.maxPQPool)
 
             if light == "off":
                 Absorbed, Fluoresced, PQ = psii.update(light)
                 self.updateCounters(Absorbed, Fluoresced, PQ)
-                #psii.updatePQ(self.actualPQPool, self.maxPQPool)                
+                psii.updatePQ(self.actualPQPool, self.maxPQPool)                
 
             if psii.stateQA == 0:
                 self.QA += 1
@@ -420,7 +424,7 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 
     fig, ax1 = plt.subplots()
 
-    ax1.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])    
+    ax1.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])
     Fluorescence = ax1.plot(timeReal, trialsSum, 'b-', label = "Size: " + str(size) + " PhotonFlux: " + str(photonFlux) + " Layers: " + str(layers) )
     ax1.set_xlabel("Time [s]")
     ax1.set_xscale('log')
@@ -428,9 +432,10 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 
     ax2 = ax1.twinx()
     ax2.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])
+    ax2.set_ylim(ymin = 0, ymax = 100)
     ax2.set_ylabel("[%]")        
     QA = ax2.plot(timeReal, QAsum, 'm-', label = "QA pool" )
-    QAminus = ax2.plot(timeReal, QAminusSum, 'm--', label = "QA- pool" )    
+    QAminus = ax2.plot(timeReal, QAminusSum, 'm--', label = "QA- pool" )
     QB = ax2.plot(timeReal, QBsum, 'g-', label = "QB pool" )
     QBminus = ax2.plot(timeReal, QBminusSum, 'g--', label = "QB- pool" )
     QB2minus = ax2.plot(timeReal, QB2minusSum, 'g:', label = "QB2- pool")
@@ -450,7 +455,6 @@ trialsNum = 1
 size = 1
 layer = 1
 PQnumber = 3750 # based on Oja et al., 2011
-#photonFluxList = range(200,1001,200)
 photonFluxList = [1000]
 
 projectPath = '/home/ludwik/Documents/python/Monte-Carlo/Layers and size/'
@@ -461,5 +465,11 @@ def Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer):
     fileName = str('numPSIIs%i timeSteps%i trialsNum%i size%.2f layers%i lightDependency.svg' % (numPSIIs, timeSteps, trialsNum, size, layer))
     plt.savefig(projectPath + "QA" + fileName, width = 30, height = 8)
     plt.close()
-
 Simulate(numPSIIs, timeSteps, trialsNum, photonFluxList, size, layer)
+#
+#size = 1.0
+#photonFlux = 1000
+#a = PSII(size = size, photonFlux = photonFlux, leafArea = 10000)
+#for nr in range(0,100):
+#    print a.update()
+#    print a.graphPSIITransitions.vs[a.state]["label"]
