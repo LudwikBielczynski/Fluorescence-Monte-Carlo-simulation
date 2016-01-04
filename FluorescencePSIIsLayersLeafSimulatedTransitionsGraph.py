@@ -50,17 +50,20 @@ class PSII(object):
         self.size = size
 
         self.P_ABS = self.photonFlux/float(self.leafArea) * self.size
-        self.P_D = 1 - np.exp(-.1/3.5)
+        self.P_D = 1.0
+        #self.P_D = 1 - np.exp(-.1/3.5)
         self.P_F = 0.3
         self.P_QA = 1.0                  #Based on Lazar and Schansker, 2009
         self.P_QB = 0.35              
         self.P_QB2 = 0.175
-        self.P_PQ = 0.08
+
 
         self.P_QA_r = 0.0
         self.P_QB_r = 0.0175
         self.P_QB2_r = 0.0035
 
+        self.P_PQ = 0.08
+        self.P_PQ_r = 0.005
         #self.P_QA_r = 0.0
         #self.P_QB_r = 0.0
         #self.P_QB2_r = 0.0
@@ -109,21 +112,20 @@ class PSII(object):
                 print 'not implemented'
 
         if light == "on":
-            #Excitation and Decay
+            #Excitation
             randomizedNumber = random.random()
-            if 'Excitation decay' in transitionList and randomizedNumber <= self.P_D:
-                self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = "Excitation decay")[0].target
-                self.updateState()
-                transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
-                transitionListProbabilities = self.graphPSIITransitions.es.select(_source=self.state)[:]["Probability"]                
-                randomizedNumber = random.random()
-                if randomizedNumber <= self.P_F:
-                    Fluoresced = True
-
             if 'Absorption' in transitionList and randomizedNumber <= self.P_ABS:
                 Absorbed = True
                 self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = "Absorption")[0].target
+                #if the excited PSII ends up with an empty QA in the time scale of 100us it makes always a transition to QA
+                if self.state == 1:
+                    self.state = 2
+                if self.state == 5:
+                    self.state = 6
+                if self.state == 9:
+                    self.state = 10                    
                 self.updateState()
+
                 transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
                 transitionListProbabilities = self.graphPSIITransitions.es.select(_source=self.state)[:]["Probability"]
 
@@ -158,11 +160,23 @@ class PSII(object):
                             self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = transferBack[0])[0].target
                             self.updateState()
                             transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
+
+            #Decay
+            if 'Excitation decay' in transitionList and randomizedNumber <= self.P_D:
+                self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = "Excitation decay")[0].target
+                self.updateState()
+                transitionList = self.graphPSIITransitions.es.select(_source=self.state)[:]["Transition"]
+                transitionListProbabilities = self.graphPSIITransitions.es.select(_source=self.state)[:]["Probability"]                
+                randomizedNumber = random.random()
+                if randomizedNumber <= self.P_F:
+                    Fluoresced = True
+
             #PQ diffusion
             if 'PQH2 diffusion' in transitionList and randomizedNumber <= self.P_PQ:
                 PQdiffuse = True
                 self.state = self.graphPSIITransitions.es.select(_source=self.state, Transition = "PQH2 diffusion")[0].target
                 self.updateState()
+
 
         return Absorbed, Fluoresced, PQdiffuse
 
@@ -224,11 +238,15 @@ class Layer(object):
                 if psii.P_ABS < 1:                            #case of single excitations
                     Absorbed, Fluoresced, PQ = psii.update(light)
                     self.updateCounters(Absorbed, Fluoresced, PQ)
+                    if random.random() <= psii.P_PQ_r:
+                        self.actualPQPool += 1
                     #psii.updatePQ(self.actualPQPool, self.maxPQPool)
                 else:
                     for excitation in range(0,int(psii.P_ABS)):   #case if multiple excitations
                         Absorbed, Fluoresced, PQ = psii.update(light)
                         self.updateCounters(Absorbed, Fluoresced, PQ)
+                        if random.random() <= psii.P_PQ_r:
+                            self.actualPQPool += 1                        
                         #psii.updatePQ(self.actualPQPool, self.maxPQPool)
 
             if light == "off":
@@ -409,14 +427,15 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
     ax1.set_ylabel("Ft [counts]")
 
     ax2 = ax1.twinx()
-    ax2.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])        
-    PQ = ax2.plot(timeReal, PQsum, 'r-', label = "PQ pool" )
-    ax2.set_ylabel("[%]")
+    ax2.set_xlim(xmin = timeReal[1], xmax = timeReal[timeSteps])
+    ax2.set_ylabel("[%]")        
     QA = ax2.plot(timeReal, QAsum, 'm-', label = "QA pool" )
     QAminus = ax2.plot(timeReal, QAminusSum, 'm--', label = "QA- pool" )    
     QB = ax2.plot(timeReal, QBsum, 'g-', label = "QB pool" )
     QBminus = ax2.plot(timeReal, QBminusSum, 'g--', label = "QB- pool" )
-    QB2minus = ax2.plot(timeReal, QB2minusSum, 'g:', label = "QB2- pool" )        
+    QB2minus = ax2.plot(timeReal, QB2minusSum, 'g:', label = "QB2- pool")
+    PQ = ax2.plot(timeReal, PQsum, 'r-', label = "PQ pool" )
+
     lns = Fluorescence + QA + QAminus + QB + QBminus + QB2minus + PQ
     labs = [l.get_label() for l in lns]
     ax1.legend(lns, labs, loc = 'best', fontsize = 'small')
@@ -427,7 +446,7 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 #####################################################
 numPSIIs = 1000
 timeSteps = 10000
-trialsNum = 10
+trialsNum = 1
 size = 1
 layer = 1
 PQnumber = 3750 # based on Oja et al., 2011
