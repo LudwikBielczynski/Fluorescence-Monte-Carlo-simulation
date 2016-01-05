@@ -91,7 +91,6 @@ class PSII(object):
         Function describing the space of possible transition without or under illumination. The PSII is assumed have a QB site that is able to accept an electron.
         The reopening of RCs is added.
         When the light is off only the closed, excited RCs can fluoresce or decay non-radiatively.
-        When the light is on following scheme is assumed:
 
         Input:
             light: str "on" or "off" representing if the photon flux will be hitting the RCs during a timestep
@@ -447,7 +446,7 @@ def simulatingLeaf(numPSIIs = 1000, timeSteps = 100, trialsNum = 1, size = 1, ph
 #####################################################
 numPSIIs = 1000
 timeSteps = 10000
-trialsNum = 10
+trialsNum = 50
 size = 1
 layer = 1
 PQnumber = 3750 # based on Oja et al., 2011
